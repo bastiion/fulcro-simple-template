@@ -1,0 +1,24 @@
+{
+  "name": "bookmark-fulcro-project",
+  "version": "1.0.0",
+  "description": "A plugin to semantically synchronize your bookmarks",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "semantic",
+    "rdf",
+    "extension",
+    "firefox",
+    "chrome",
+    "bookmarks"
+  ],
+  "author": "Sebastian Tilsch <graviola@posteo.de>",
+  "license": "ISC",
+  "dependencies": {
+    "react": "^16.9.0",
+    "react-dom": "^16.9.0",
+    "shadow-cljs": "^2.8.55"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "appName": {
+    "message": "Bookmark RDF Sync",
+    "description": "The name of the extension."
+  },
+  "appDescription": {
+    "message": "A plugin to semantically synchronize your bookmarks",
+    "description": "The description of the extension."
+  },
+  "btnTooltip": {
+    "message": "Bookmark RDF Sync",
+    "description": "Tooltip for the button."
+  }
+}

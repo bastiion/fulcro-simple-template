@@ -1,5 +1,5 @@
 {:deps     {:aliases [:dev]}
- :nrepl    {:port 9000}
+ :nrepl    {:port 9001}
  :dev-http {8000 "classpath:public"}
  :builds   {:main {:target     :browser
                    :output-dir "resources/public/js/main"
@@ -7,4 +7,14 @@
                    :modules    {:main {:init-fn book.demos.root/init
                                        :entries [book.demos.root]}}
                    :devtools   {:after-load book.demos.root/refresh
-                                :preloads   [com.fulcrologic.fulcro.inspect.preload]}}}}
+                                :preloads   [com.fulcrologic.fulcro.inspect.preload]
+                                :use-document-host false}}
+            :main-test {:target     :browser
+                   :output-dir "resources/public/js/main"
+                   :asset-path "/js/main"
+                   :modules    {:main {:init-fn book.demos.test/init
+                                       :entries [book.demos.test]}}
+                   :devtools   {:after-load book.demos.test/refresh
+                                :preloads   [com.fulcrologic.fulcro.inspect.preload]
+                                :use-document-host false}}
+            }}

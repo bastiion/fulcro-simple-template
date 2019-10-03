@@ -5,14 +5,10 @@
     [com.fulcrologic.fulcro.mutations :refer [defmutation set-string!]]
     [com.fulcrologic.fulcro.application :as app]
     [com.fulcrologic.fulcro.networking.http-remote :as http]
-    [com.fulcrologic.fulcro.algorithms.react-interop :as react-interop]
     [com.wsscode.pathom.diplomat.http.fetch :as http-fetch]
-    [com.wsscode.pathom.diplomat.http :as p.http]
     [com.wsscode.pathom.connect :as pc]
     [com.wsscode.common.async-cljs :refer [go-catch <!p <?]]
 
-    [book.demos.mastodon :as mastodon]
-    [book.demos.parser.test :as test]
 
     [com.fulcrologic.fulcro.data-fetch :as df]
     [cljs.core.async :as async :refer [chan put! take! >! <! timeout close! alts!]]
@@ -21,7 +17,6 @@
     [com.wsscode.pathom.core :as p]
 
 
-    [com.fulcrologic.semantic-ui.factory-helpers :as h]
     [com.fulcrologic.semantic-ui.elements.input.ui-input :refer [ui-input]]
     [com.fulcrologic.semantic-ui.collections.form.ui-form :refer [ui-form]]
     [com.fulcrologic.semantic-ui.collections.form.ui-form-input :refer [ui-form-input]]
@@ -46,8 +41,6 @@
 (comment
   (clog {:message "Hello, CLog" :color "blue"})
 
-  (clojure.repl/doc List)
-
   )
 
 (defn clog
@@ -57,6 +50,11 @@
   [{:keys [message props color] :or {message "Hello, World!" color "green" props {}}}]
   (js/console.log (str "%c" message), (str "color: " color "; font-weight: bold; font-size: small;"))
   (js/console.log props))
+
+
+(def http-driver http-fetch/request-async)
+
+(defonce indexes (atom {}))
 
 (defonce app
          (app/fulcro-app
@@ -70,21 +68,6 @@
                      (swap! state update :ui/number inc)))
 
 
-(defn listen
-  [channel]
-  "Listen to our channel for any events and log them"
-  (async/go
-    (while true
-      (js/console.log (async/<! channel)))))
-
-
-(pc/defresolver random-dog [env {:keys []}]
-                {::pc/output [:dog.ceo/random-dog-url]}
-                (go-catch
-                  {:dog.ceo/random-dog-url
-                   (-> (js/fetch "https://dog.ceo/api/breeds/image/random") <!p
-                       (.json) <!p
-                       (gobj/get "message"))}))
 
 (pc/defresolver bookmark-tree-json [env {:keys []}]
                 {::pc/output [:chrome.bookmarks/tree-json]}
@@ -131,49 +114,7 @@
        (js->clj :keywordize-keys true)
        )}))
 
-
-
-
-;; How to go from :person/id to that person's details
-(pc/defresolver person-resolver [env {:keys [person/id] :as params}]
-  ;; The minimum data we must already know in order to resolve the outputs
-  {::pc/input  #{:person/id}
-   ;; A query template for what this resolver outputs
-   ::pc/output [:person/name {:person/address [:address/id]}]}
-  ;; normally you'd pull the person from the db, and satisfy the listed
-  ;; outputs. For demo, we just always return the same person details.
-  {:person/name    "Tom"
-   :person/address {:address/id 1}})
-
-(pc/defresolver address-resolver [env {:keys [address/id] :as params}]
-  {::pc/input  #{:address/id}
-   ::pc/output [:address/city :address/state]}
-  {:address/city "Salem"
-   :address/state "MA"})
-
-(defn spacex-plugin []
-  {::pc/register [random-dog]})
-
-
-(def http-driver http-fetch/request-async)
-
-(defonce indexes (atom {}))
-
-(def dog2-parser
-  (p/parallel-parser
-    {::p/env     {::p/reader               [p/map-reader
-                                            pc/parallel-reader
-                                            pc/open-ident-reader
-                                            p/env-placeholder-reader]
-                  ::p/placeholder-prefixes #{">"}
-                  ::p.http/driver          http-driver}
-     ::p/plugins [(pc/connect-plugin {#_#_::pc/register app-registry
-                                      ::pc/indexes indexes})
-                  (spacex-plugin)
-                  p/error-handler-plugin
-                  p/trace-plugin]}))
-
-(def dog-parser
+(def bookmark-parser
   (p/parallel-parser
     {::p/env     {::p/reader               [p/map-reader
                                             pc/parallel-reader
@@ -181,36 +122,28 @@
                                             p/env-placeholder-reader]
                   ::p/placeholder-prefixes #{">"}}
      ::p/plugins [(pc/connect-plugin {::pc/register
-                                      [random-dog
-                                       bookmark-tree
+                                      [bookmark-tree
                                        bookmark-tree-json
                                        bookmark-search
-                                       person-resolver
-                                       address-resolver
                                        ]})
                   p/error-handler-plugin
                   p/trace-plugin]}))
 
-(defn dog-api [entity query fn1]
-  (take! (dog-parser {::p/entity (atom entity)} query) fn1))
-
-(defmutation get-random-dog [_]
-             (action [{:keys [state]}]
-                     (clog {:message "random dog" :color "magenta" :props state})
-                     (dog-api {} [:dog.ceo/random-dog-url] #(swap! state into %))))
+(defn bookmark-api [entity query fn1]
+  (take! (bookmark-parser {::p/entity (atom entity)} query) fn1))
 
 (defmutation get-bookmark-tree [_]
              (action [{:keys [state]}]
-                     (dog-api {} [:chrome.bookmarks/tree] #(swap! state into %))))
+                     (bookmark-api {} [:chrome.bookmarks/tree] #(swap! state into %))))
 
 (defmutation get-bookmark-tree-json [_]
              (action [{:keys [state]}]
-                     (dog-api {} [:chrome.bookmarks/tree-json] #(swap! state into %))))
+                     (bookmark-api {} [:chrome.bookmarks/tree-json] #(swap! state into %))))
 
 (defmutation search-bookmark [{:keys [search-term]}]
   (action [{:keys [state]}]
-          (dog-api {} [{[:search/search search-term] [:chrome.bookmarks/search]}]
-                   (fn [result]
+          (bookmark-api {} [{[:search/search search-term] [:chrome.bookmarks/search]}]
+                        (fn [result]
                      (do
                        (swap! state into (second (first result))))))))
 
@@ -236,44 +169,27 @@
                                        #(build-tag-cloud % (flatten tg))
                                        (:children bookmark-tree))))))
 
-(defn pi
-  "Approximate Pi to the 1/n decimal with Leibniz formula"
-  [n]
-  (transduce
-    (comp (map #(/ 4 %)) (take n))
-    +
-    (iterate #(* ((if (pos? %) + -) % 2) -1) 1.0)))
-
-(comment
-  (prn (pi 1e8)))
-
-
-
 (comment
 
-  (dog-api {} [:dog.ceo/random-dog-url] #(prn %))
+  (bookmark-api {} [:chrome.bookmarks/tree] #(prn %))
 
-  (dog-api {} [:chrome.bookmarks/tree] #(prn %))
+  (bookmark-api {} [{[:search/search "clojure"] [:chrome.bookmarks/search]}] #(prn %))
 
-  (dog-api {} [{[:search/search "clojure"] [:chrome.bookmarks/search]}] #(prn %))
-
-  (dog-api {} [:chrome.bookmarks/tree-json] (fn [tree]
+  (bookmark-api {} [:chrome.bookmarks/tree-json] (fn [tree]
                                               (prn (count  (build-tag-list (:chrome.bookmarks/tree-json tree))))))
 
-  (dog-api {} [:chrome.bookmarks/tree-json] (fn [tree]
+  (bookmark-api {} [:chrome.bookmarks/tree-json] (fn [tree]
                                               (prn (build-tag-cloud (:chrome.bookmarks/tree-json tree) nil))))
 
-  (dog-api {} [{[:person/id 1] [:person/name ]}] #(prn %))
+  (bookmark-api {} [{[:person/id 1] [:person/name ]}] #(prn %))
 
 
-  (dog-parser {} [:dog.ceo/random-dog-url])
+  (bookmark-parser {} [:dog.ceo/random-dog-url])
 
   (go
     (prn
-      (<? (dog-parser {} [:dog.ceo/random-dog-url]))))
+      (<? (bookmark-parser {} [:dog.ceo/random-dog-url]))))
   )
-
-
 
 
 (declare ui-bookmarknode)
@@ -315,31 +231,6 @@
              )
         ))))
 
-(defsc BookmarkNodeLegacy [this {:keys [id title dateAdded children url]}]
-  {
-   :initial-state { :id "0"
-                   :title ""
-                   :dateAdded 0
-                   :uri "#"
-                   :children []
-                   }}
-  (dom/div {:className "item"}
-    (ui-icon {:name i/folder-icon})
-    (dom/div {:className "content"}
-      (dom/div {:className "title"}
-              (dom/a {:href url}
-                     title))
-      (dom/div {:className "description"} (.toString (js/Date. dateAdded)))
-      (dom/div {:className "list"
-                }
-        (map (fn [child]
-               (ui-bookmarknode child)
-               )
-             children
-             )
-        ))))
-
-
 
 (def ui-bookmarknode (comp/factory BookmarkNode {:key-fn :id}))
 
@@ -357,19 +248,16 @@
     (clog {:message (str tree)})
     (dom/div
       (ui-button-group nil
-                       (ui-button {:icon true}
-                                  (ui-icon {:name i/align-left-icon}))
-                       (ui-button {:icon true}
-                                  (ui-icon {:name i/align-center-icon}))
-                       (ui-button {:icon true}
-                                  (ui-icon {:name i/align-right-icon}))
-                       (ui-button {:icon true}
-                                  (ui-icon {:name i/align-justify-icon}))
-                       )
-      (ui-button {:onClick #(comp/transact! this `[(get-bookmark-tree {})])}
-                  "get bookmarks")
-      (ui-button {:onClick #(comp/transact! this `[(get-bookmark-tree-json {})])}
-                  "get json")
+                       (ui-button {
+                                   :icon true
+                                   :onClick #(comp/transact! this `[(get-bookmark-tree {})])}
+                                  (ui-icon {:name i/js-icon})
+                                  "get bookmarks")
+                       (ui-button {
+                                   :icon true
+                                   :onClick #(comp/transact! this `[(get-bookmark-tree-json {})])}
+                                  (ui-icon {:name i/tree-icon})
+                                  "get json"))
       (ui-input {:value search-term :onChange on-search-term-change})
       (ui-button {:icon true :onClick #(comp/transact! this `[(search-bookmark {:search-term  ~search-term})])}
                  (ui-icon {:name i/search-icon})
@@ -392,25 +280,6 @@
 
 (def ui-bookmarktree (comp/factory Bookmarktree))
 
-(defsc Root [this {:ui/keys [number] :dog.ceo/keys [random-dog-url] :as props}]
-       {:query         [:ui/number
-                        :dog.ceo/random-dog-url
-                        {:chrome.bookmarks/tree (comp/get-query Bookmarktree)}]
-        :initial-state {:ui/number 0
-                        :dog.ceo/random-dog-url "test"
-                        }}
-       (dom/div
-         (dom/h4 "This is an example.")
-         (dom/button {:onClick #(comp/transact! this `[(bump-number {})])}
-                     "You've clicked this button " number " times.")
-         (dom/button {:onClick #(comp/transact! this `[(get-random-dog {})])}
-                     "get a random dog")
-         (dom/img {:src random-dog-url :alt random-dog-url})
-         (ui-bookmarktree props)
-         ))
-
-
-
 
 (defn ^:export init
   "Shadow-cljs sets this up to be our entry-point function. See shadow-cljs.edn `:init-fn` in the modules of the main build."
@@ -424,15 +293,4 @@
   ;; re-mounting will cause forced UI refresh, update internals, etc.
   (app/mount! app Bookmarktree "app")
   (js/console.log "Hot reload"))
-
-(def bookmark-out
-  [:bookmark/index
-   :bookmark/type
-   :bookmark/title
-   :bookmark/id
-   :bookmark/url
-   :bookmark/dateAdded
-   :bookmark/dateGroupModified
-   :bookmark/parentId
-   ])
 
